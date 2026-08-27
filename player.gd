@@ -18,15 +18,25 @@ const MAX_FALL          := 1200.0
 const COYOTE_TIME := 0.10
 const JUMP_BUFFER := 0.12
 
-const SQUASH_JUMP   := Vector2(0.78, 1.26)   # tall and thin, launching
-const SQUASH_LAND   := Vector2(1.28, 0.74)   # short and wide, absorbing
-const SQUASH_RECOVER := 16.0                 # how fast it springs back
+const SQUASH_JUMP    := Vector2(0.78, 1.26)
+const SQUASH_LAND    := Vector2(1.28, 0.74)
+const SQUASH_RECOVER := 16.0
 
-@onready var body: Node2D = $Body
+const CAM_LOOKAHEAD := 46.0    # pixels the camera leads in your direction of travel
+const CAM_EASE      := 6.0
+const SHAKE_DECAY   := 44.0
+const HARD_LANDING  := 900.0   # below this, landings are quiet
+const DUST_LANDING  := 350.0
+
+@onready var body: Node2D          = $Body
+@onready var cam:  Camera2D        = $Camera2D
+@onready var dust: CPUParticles2D  = $Dust
 
 var _coyote := 0.0
 var _buffer := 0.0
 var _squash := Vector2.ONE
+var _look   := 0.0
+var _shake  := 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -57,7 +67,6 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_released("jump") and velocity.y < 0.0:
 		velocity.y *= JUMP_CUT
 
-	# Remember these BEFORE move_and_slide — it zeroes velocity.y on impact.
 	var was_on_floor := is_on_floor()
 	var impact := velocity.y
 
@@ -66,9 +75,22 @@ func _physics_process(delta: float) -> void:
 	if is_on_floor() and not was_on_floor:
 		_on_land(impact)
 
-	# Ease the squash back to normal. Frame-rate independent, unlike a plain lerp.
 	_squash = _squash.lerp(Vector2.ONE, 1.0 - exp(-SQUASH_RECOVER * delta))
 	body.scale = _squash
+
+	_update_camera(delta)
+
+
+func _update_camera(delta: float) -> void:
+	# Lead the camera toward where the player is going, not where they are.
+	var target := (velocity.x / MAX_SPEED) * CAM_LOOKAHEAD
+	_look = lerpf(_look, target, 1.0 - exp(-CAM_EASE * delta))
+
+	_shake = maxf(_shake - SHAKE_DECAY * delta, 0.0)
+	cam.offset = Vector2(
+		_look + randf_range(-_shake, _shake),
+		randf_range(-_shake, _shake)
+	)
 
 
 func _jump() -> void:
@@ -80,6 +102,10 @@ func _jump() -> void:
 
 func _on_land(impact: float) -> void:
 	_squash = SQUASH_LAND
+	if impact > DUST_LANDING:
+		dust.restart()
+	if impact > HARD_LANDING:
+		_shake = minf(impact / 110.0, 9.0)
 
 
 func _apply_gravity(delta: float) -> void:
