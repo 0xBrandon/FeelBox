@@ -7,12 +7,17 @@ const AIR_ACCEL    := 1500.0
 const AIR_FRICTION := 320.0
 
 const JUMP_VELOCITY := -520.0
-const JUMP_CUT      := 0.40    # <- the new one
-const GRAVITY       := 1400.0
+const JUMP_CUT      := 0.40
+
+const GRAVITY_RISE      := 1500.0   # while going up
+const GRAVITY_FALL      := 2900.0   # while coming down — almost twice as strong
+const APEX_SPEED        := 110.0    # "near the top of the arc" threshold
+const APEX_GRAVITY_MULT := 0.55     # gravity is weaker up there = hang time
+const MAX_FALL          := 1200.0   # terminal velocity
 
 
 func _physics_process(delta: float) -> void:
-	velocity.y += GRAVITY * delta
+	_apply_gravity(delta)
 
 	var direction := Input.get_axis("move_left", "move_right")
 	var accel     := ACCEL if is_on_floor() else AIR_ACCEL
@@ -26,8 +31,17 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = JUMP_VELOCITY
 
-	# Let go while still rising? Kill most of the upward speed.
 	if Input.is_action_just_released("jump") and velocity.y < 0.0:
 		velocity.y *= JUMP_CUT
 
 	move_and_slide()
+
+
+func _apply_gravity(delta: float) -> void:
+	var g := GRAVITY_RISE if velocity.y < 0.0 else GRAVITY_FALL
+
+	# Near the apex, ease off. This is the single most "Nintendo" line in the file.
+	if absf(velocity.y) < APEX_SPEED:
+		g *= APEX_GRAVITY_MULT
+
+	velocity.y = minf(velocity.y + g * delta, MAX_FALL)
