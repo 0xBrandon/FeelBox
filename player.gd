@@ -15,11 +15,18 @@ const APEX_SPEED        := 110.0
 const APEX_GRAVITY_MULT := 0.55
 const MAX_FALL          := 1200.0
 
-const COYOTE_TIME := 0.10   # you may still jump for 100ms after leaving the ground
-const JUMP_BUFFER := 0.12   # a press up to 120ms early still counts when you land
+const COYOTE_TIME := 0.10
+const JUMP_BUFFER := 0.12
+
+const SQUASH_JUMP   := Vector2(0.78, 1.26)   # tall and thin, launching
+const SQUASH_LAND   := Vector2(1.28, 0.74)   # short and wide, absorbing
+const SQUASH_RECOVER := 16.0                 # how fast it springs back
+
+@onready var body: Node2D = $Body
 
 var _coyote := 0.0
 var _buffer := 0.0
+var _squash := Vector2.ONE
 
 
 func _physics_process(delta: float) -> void:
@@ -34,7 +41,6 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 
-	# --- the two forgiveness timers ---
 	if is_on_floor():
 		_coyote = COYOTE_TIME
 	else:
@@ -51,13 +57,29 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_released("jump") and velocity.y < 0.0:
 		velocity.y *= JUMP_CUT
 
+	# Remember these BEFORE move_and_slide — it zeroes velocity.y on impact.
+	var was_on_floor := is_on_floor()
+	var impact := velocity.y
+
 	move_and_slide()
+
+	if is_on_floor() and not was_on_floor:
+		_on_land(impact)
+
+	# Ease the squash back to normal. Frame-rate independent, unlike a plain lerp.
+	_squash = _squash.lerp(Vector2.ONE, 1.0 - exp(-SQUASH_RECOVER * delta))
+	body.scale = _squash
 
 
 func _jump() -> void:
 	velocity.y = JUMP_VELOCITY
-	_coyote = 0.0   # spend them both, or you get a double jump
+	_coyote = 0.0
 	_buffer = 0.0
+	_squash = SQUASH_JUMP
+
+
+func _on_land(impact: float) -> void:
+	_squash = SQUASH_LAND
 
 
 func _apply_gravity(delta: float) -> void:
